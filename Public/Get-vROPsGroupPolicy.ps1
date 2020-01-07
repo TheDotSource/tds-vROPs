@@ -29,7 +29,7 @@
         Return the policy applied to CustomGroup1 on vROPs node vrops01.lab.local
 
     .LINK
-        
+
     .NOTES
         01           Alistair McNair          Initial version.
 
@@ -47,7 +47,7 @@
     )
 
     begin {
-        
+
         Write-Verbose ("Starting function.")
 
         ## Ignore invalid certificates
@@ -64,7 +64,7 @@
             }
 "@
 
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue   
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -119,7 +119,7 @@
 
 
         ## Get group object by name
-        $groupObj = $customGroups.groups | where {$_.resourceKey.name -eq $customGroup}
+        $groupObj = $customGroups.groups | Where-Object {$_.resourceKey.name -eq $customGroup}
 
 
         ## Check there is 1 group matching this name. If not warn and return null.
@@ -130,7 +130,7 @@
 
 
         Write-Verbose ("Found group " + $customGroup)
-        
+
 
         ## Check what policy is associated with this group
         if ($groupObj.policy.count -eq 0) {
@@ -144,7 +144,7 @@
         else {
 
             ## Match this ID to previously extracted list of policies
-            $policyDetails = $vropsPolicies.'policy-summaries' | where {$_.id -eq $groupObj.policy}
+            $policyDetails = $vropsPolicies.'policy-summaries' | Where-Object {$_.id -eq $groupObj.policy}
 
             Write-Verbose ("Group has a policy " + $policyDetails.name + " applied.")
 

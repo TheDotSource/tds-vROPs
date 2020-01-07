@@ -30,13 +30,13 @@
         Apply policy TEST-POLICY to group CustomGroup on vROPs node vrops01.lab.local
 
     .LINK
-        
+
     .NOTES
         01           Alistair McNair          Initial version.
 
     #>
 
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="Medium")]
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
@@ -50,7 +50,7 @@
     )
 
     begin {
-        
+
         Write-Verbose ("Starting function.")
 
         ## Ignore invalid certificates
@@ -67,7 +67,7 @@
             }
 "@
 
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue   
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -104,7 +104,7 @@
 
 
         ## Match this ID to previously extracted list of policies
-        $policyDetails = $vropsPolicies.'policy-summaries' | where {$_.name -eq $policyName}
+        $policyDetails = $vropsPolicies.'policy-summaries' | Where-Object {$_.name -eq $policyName}
 
 
         ## Check we have 1 matching policy
@@ -130,7 +130,7 @@
 
 
         ## Get group object by name
-        $groupObj = $customGroups.groups | where {$_.resourceKey.name -eq $customGroup}
+        $groupObj = $customGroups.groups | Where-Object {$_.resourceKey.name -eq $customGroup}
 
 
         ## Check there is 1 group matching this name
@@ -173,7 +173,12 @@
 
         ## Get collection of custom groups from API
         try {
-            $customGroups = Invoke-RestMethod -Uri $Uri -Method Put -Headers $headers -Body ($groupObj | ConvertTo-Json -Depth 5) -Credential $Credential -ErrorAction Stop
+
+            ## Apply shouldProcess
+            if ($PSCmdlet.ShouldProcess($customGroup)) {
+                $customGroups = Invoke-RestMethod -Uri $Uri -Method Put -Headers $headers -Body ($groupObj | ConvertTo-Json -Depth 5) -Credential $Credential -ErrorAction Stop
+            } # if
+
             Write-Verbose ("Group was updated with new policy details.")
         } # try
         catch {

@@ -42,7 +42,7 @@
         Import the policy file sample.xml to all vROPs nodes within the $vROPSNodes array (will not overwrite). Uses credential object $creds.
 
     .LINK
-        
+
     .NOTES
         01           Alistair McNair          Initial version.
 
@@ -62,7 +62,7 @@
     )
 
     begin {
-        
+
         Write-Verbose ("Starting function.")
 
         ## Ignore invalid certificates
@@ -79,7 +79,7 @@
             }
 "@
 
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue   
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -97,10 +97,6 @@
         if ($forceUpdate.IsPresent) {
             Write-Verbose ("Policy overwrite has been specified.")
         } # if
-
-
-        ## Get filename from path
-        $policyFilename = Split-Path -Path $policyFile -Leaf
 
 
         ## Create an HTTP boundary, required for multipart uploads
@@ -126,7 +122,7 @@
 
         ## Load the required assemblies
         try {
-            $assemblies = Add-Type -Assembly System.IO.Compression -ErrorAction Stop
+            Add-Type -Assembly System.IO.Compression -ErrorAction Stop | Out-Null
         } # try
         catch {
             Write-Debug ("Failed to load assemblies.")
@@ -145,7 +141,7 @@
         $zipArchive = [System.IO.Compression.ZipArchive]::new($memStream, ([IO.Compression.CompressionMode]::Compress))
 
         ## Set new entry in this zip for policy file
-        $zipEntry = $zipArchive.CreateEntry("policyImport.xml") 
+        $zipEntry = $zipArchive.CreateEntry("policyImport.xml")
 
         ## Open stream to this file and write in contents
         $fileStream = $zipEntry.Open()

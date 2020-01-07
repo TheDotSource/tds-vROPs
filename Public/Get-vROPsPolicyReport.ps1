@@ -1,4 +1,4 @@
-﻿function Report-vROPsPolicy {
+﻿function Get-vROPsPolicyReport {
     <#
     .SYNOPSIS
         Outputs a report on what alerts are associated with what policies.
@@ -31,12 +31,13 @@
         Query testvro01.lab.local and testvro02.lab.local and save results to $results. Use credential object in $creds. Use verbose output.
 
     .LINK
-        
+
     .NOTES
         01           Alistair McNair          Initial version.
 
     #>
 
+    [OutputType("System.Collections.ArrayList")]
     [CmdletBinding()]
     Param
     (
@@ -47,7 +48,7 @@
     )
 
     begin {
-        
+
         Write-Verbose ("Starting function.")
 
         ## Ignore invalid certificates
@@ -64,7 +65,7 @@
             }
 "@
 
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue   
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -84,7 +85,7 @@
         Write-Verbose ("Loading assemblies.")
 
         try {
-            $assemblies = Add-Type -Assembly System.IO.Compression -ErrorAction Stop
+            Add-Type -Assembly System.IO.Compression -ErrorAction Stop | Out-Null
         } # try
         catch {
             Write-Debug ("Failed to load assemblies.")
@@ -122,7 +123,7 @@
         ## Iterate through alerts and create objects for each
         foreach ($vropsAlert in $vropsAlerts.alertDefinitions) {
 
-            $result = $alertObjs.Add([pscustomobject]@{"vropsInstance" = $vROPSNode;"alertName" = $vropsAlert.name; "alertId" = $vropsAlert.id; "alertPolicies" = @()})
+            $alertObjs.Add([pscustomobject]@{"vropsInstance" = $vROPSNode;"alertName" = $vropsAlert.name; "alertId" = $vropsAlert.id; "alertPolicies" = @()}) | Out-Null
 
         } # foreach
 
@@ -146,7 +147,7 @@
 
 
         ## Iterate through each policy, decompress and get alert associations, excluding the Base Settings policy
-        foreach ($vropsPolicy in $vropsPolicies.'policy-summaries'  | where {$_.name -ne "Base Settings"}) {
+        foreach ($vropsPolicy in $vropsPolicies.'policy-summaries'  | Where-Object {$_.name -ne "Base Settings"}) {
 
             Write-Verbose ("Processing vROPs policy " + $vropsPolicy.name)
 

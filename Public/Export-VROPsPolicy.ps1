@@ -34,7 +34,7 @@
         Use the credential object $creds and use verbose output.
 
     .LINK
-        
+
     .NOTES
         01           Alistair McNair          Initial version.
 
@@ -54,7 +54,7 @@
     )
 
     begin {
-        
+
         Write-Verbose ("Starting function.")
 
         ## Ignore invalid certificates
@@ -71,7 +71,7 @@
             }
 "@
 
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue   
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -91,7 +91,7 @@
         Write-Verbose ("Loading assemblies.")
 
         try {
-            $assemblies = Add-Type -Assembly System.IO.Compression -ErrorAction Stop
+            Add-Type -Assembly System.IO.Compression -ErrorAction Stop | Out-Null
         } # try
         catch {
             Write-Debug ("Failed to load assemblies.")
@@ -136,7 +136,7 @@
 
 
         ## Get policy ID for the specified name
-        $policyGUID = $vropsPolicies.'policy-summaries' | where {$_.name -eq $policyName}
+        $policyGUID = $vropsPolicies.'policy-summaries' | Where-Object {$_.name -eq $policyName}
 
 
         ## Check we have 1 policy to work with

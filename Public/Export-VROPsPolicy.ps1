@@ -9,8 +9,8 @@
             * Downloads the zip archive of the policy from API
             * Extracts the XML string and saves it to the specified directory using the naming format <vrops node>-<policy name>.xml
 
-    .PARAMETER vROPSNode
-        The target vROPs node to perform an export on. Can be pipelined.
+    .PARAMETER vROPSCon
+        A vROPs connection object as created by Connect-vROPs
 
     .PARAMETER destinationDir
         The destination directory to save the XML file.
@@ -18,25 +18,22 @@
     .PARAMETER policyName
         The vROPs policy name to fetch content for.
 
-    .PARAMETER Credential
-        PowerShell credential object with appropriate permissions for policy export.
-
     .INPUTS
-        System.String. vROPs node names can be piped to this function.
+        vropsConnection. A vROPs connection object.
 
     .OUTPUTS
         None.
 
     .EXAMPLE
-        "testvro01.lab.local","testvro02.lab.local" | Export-VROPsPolicy -destinationDir C:\vROPsDemo -Credential $creds -policyName TEST-POLICY02 -Verbose
+        Export-VROPsPolicy -vROPSCon $vRopsCon -destinationDir C:\vROPsDemo -policyName TEST-POLICY02
 
-        Export TEST-POLICY02 from testvro01.lab.local and testvro02.lab.local, save them to c:\vROPsDemo as testvro01.lab.local-TEST-POLICY2.xml and testvro02.lab.local-TEST-POLICY2.xml respectively.
-        Use the credential object $creds and use verbose output.
+        Export TEST-POLICY02 and save to c:\vROPsDemo. Use the vrops connection object $vRopsCon
 
     .LINK
 
     .NOTES
         01           Alistair McNair          Initial version.
+        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -44,13 +41,11 @@
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [string]$vROPSNode,
+        [vropsConnection]$vROPSCon,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [String]$destinationDir,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [String]$policyName,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [System.Management.Automation.PSCredential]$Credential
+        [String]$policyName
     )
 
     begin {
@@ -76,16 +71,6 @@
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
         } # if
-
-
-        ## Define headers for HTTP requests
-        $headers = @{}
-        $headers.Add("Accept", "application/json")
-        $headers.Add("Content-Type", "application/xml;charset=utf-8")
-
-        ## Add unsupported header as some calls go to internal API
-        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
-
 
         ## Load the required assemblies for handling zip files
         Write-Verbose ("Loading assemblies.")
@@ -118,15 +103,24 @@
 
         Write-Verbose ("Processing vROPS node " + $vROPSNode)
 
+        ## Define headers for HTTP requests
+        $headers = @{}
+        $headers.Add("Accept", "application/json")
+        $headers.Add("Content-Type", "application/xml;charset=utf-8")
+        $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
+
+        ## Add unsupported header as some calls go to internal API
+        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
+
 
         ## Set target URL for requesting policy list
-        $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies")
         Write-Verbose ("Fetching policies.")
 
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
@@ -149,12 +143,12 @@
 
 
         ## Fetch this policy from API, API returns in zip format
-        $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies/export?id=" + $policyGUID.id)
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies/export?id=" + $policyGUID.id)
 
         Write-Verbose ("Fetching policy zip")
 
         try {
-            $policyZip = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $policyZip = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Fetched policy zip from API.")
         } # try
         catch {
@@ -177,7 +171,7 @@
         } # try
         catch {
             Write-Debug ("Failed to open policy zip file.")
-            throw ("Failed to open policy zip file, the CMDlet returned " + $_.exception.message)
+            throw ("Failed to open policy zip file. Verify that the account used is a member of the vRops system administrators, otherwise policy export is not possible. The CMDlet returned " + $_.exception.message)
         } # catch
 
 
@@ -187,8 +181,8 @@
 
         ## Write out this XML file
         try {
-            [System.IO.File]::WriteAllLines(($destinationDir + "\" + $vROPSNode + "-" + $policyName + ".xml"), $policyXML, $Utf8NoBomEncoding)
-            Write-Verbose ("Created policy file " + ($destinationDir + "\" + $vROPSNode + "-" + $policyName + ".xml"))
+            [System.IO.File]::WriteAllLines(($destinationDir + "\" + $vROPSCon.vROPSNode + "-" + $policyName + ".xml"), $policyXML, $Utf8NoBomEncoding)
+            Write-Verbose ("Created policy file " + ($destinationDir + "\" + $vROPSCon.vROPSNode + "-" + $policyName + ".xml"))
         } # try
         catch {
             Write-Debug ("Failed to write policy file.")

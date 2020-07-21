@@ -8,14 +8,11 @@
         It will then get a list of all policy objects, iterate through these and determine what alerts are used in what policies.
         The function will return a collection of alert objects with an associated collection of policies.
 
-    .PARAMETER vROPSNode
-        The target vROPs node to perform the query on. Can be pipelined.
-
-    .PARAMETER Credential
-        PowerShell credential object with appropriate permissions to read alerts and policies.
+    .PARAMETER vROPSCon
+        A vROPs connection object as created by Connect-vROPs
 
     .INPUTS
-        System.String. vROPs node names can be piped to this function.
+        vropsConnection. A vROPs connection object.
 
     .OUTPUTS
         System.Management.Automation.PSCustomObject. A collection of custom objects representing alerts and their associated policies.
@@ -26,14 +23,16 @@
         Query testvro.lab.local and save results to $results. Use credential object in $creds. Use verbose output.
 
     .EXAMPLE
-        $results = "testvro01.lab.local", "testvro02.lab.local" | Report-vROPsPolicy -Credential $creds -Verbose
+        $results = Get-vROPsPolicyReport -vROPSCon $vRopsCon
 
-        Query testvro01.lab.local and testvro02.lab.local and save results to $results. Use credential object in $creds. Use verbose output.
+        Query on $vRopsCon and save results to $results.
 
     .LINK
 
     .NOTES
         01           Alistair McNair          Initial version.
+        02           Alistair McNair          Replaced Basic Auth with token based authentication.
+                                              Resolved issue with apostrophe in policy name
 
     #>
 
@@ -42,9 +41,7 @@
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [string]$vROPSNode,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [System.Management.Automation.PSCredential]$Credential
+        [vropsConnection]$vROPSCon
     )
 
     begin {
@@ -72,15 +69,6 @@
         } # if
 
 
-        ## Define headers for HTTP requests
-        $headers = @{}
-        $headers.Add("Accept", "application/json")
-        $headers.Add("Content-Type", "application/xml;charset=utf-8")
-
-        ## Add unsupported header as some calls go to internal API
-        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
-
-
         ## Load the required assemblies for handling zip files
         Write-Verbose ("Loading assemblies.")
 
@@ -100,18 +88,28 @@
 
     process {
 
-        Write-Verbose ("Processing vROPS node " + $vROPSNode)
+        Write-Verbose ("Processing vROPS node " + $vROPSCon.vROPSNode)
+
+        ## Define headers for HTTP requests
+        $headers = @{}
+        $headers.Add("Accept", "application/json")
+        $headers.Add("Content-Type", "application/xml;charset=utf-8")
+        $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
+
+        ## Add unsupported header as some calls go to internal API
+        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
+
 
         ## Initiliase array for alert objects (.net array used for better performance)
         $alertObjs = [System.Collections.ArrayList]@()
 
         ## Set target URI for this node
-        $Uri = ("https://" + $vROPSNode + "/suite-api/api/alertdefinitions")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/api/alertdefinitions")
 
 
         ## Get all alert content
         try {
-            $vropsAlerts = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $vropsAlerts = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got alerts from API.")
         } # try
         catch {
@@ -123,7 +121,7 @@
         ## Iterate through alerts and create objects for each
         foreach ($vropsAlert in $vropsAlerts.alertDefinitions) {
 
-            $alertObjs.Add([pscustomobject]@{"vropsInstance" = $vROPSNode;"alertName" = $vropsAlert.name; "alertId" = $vropsAlert.id; "alertPolicies" = @()}) | Out-Null
+            $alertObjs.Add([pscustomobject]@{"vropsInstance" = $vROPSCon.vROPSNode;"alertName" = $vropsAlert.name; "alertId" = $vropsAlert.id; "alertPolicies" = @()}) | Out-Null
 
         } # foreach
 
@@ -131,13 +129,13 @@
 
 
         ## Set target URL for requesting policy list
-        $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies")
         Write-Verbose ("Fetching policies.")
 
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
@@ -153,10 +151,10 @@
 
 
             ## Fetch this policy from API, API returns in zip format
-            $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies/export?id=" + $vropsPolicy.id)
+            $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies/export?id=" + $vropsPolicy.id)
 
             try {
-                $vropsPolicies = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+                $vropsPolicies = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
                 Write-Verbose ("Fetched policy zip from API.")
             } # try
             catch {
@@ -189,7 +187,7 @@
 
 
             ## Check that this policy has alerts explicitly defined, otherwise we don't need to do any further processing and can continue to next iteration
-            if (($policyXML.PolicyContent.Policies.SelectNodes(("//Policy[@name='" + $vropsPolicy.name + "']")).PackageSettings.Alerts | Measure-Object).count -lt 1) {
+            if (($policyXML.PolicyContent.Policies.SelectNodes(("//Policy[@name=`"" + $vropsPolicy.name + "`"]")).PackageSettings.Alerts | Measure-Object).count -lt 1) {
                 Write-Verbose ("No alerts locally defined within this policy, no further processing necessary.")
                 Continue
             } # if
@@ -198,7 +196,7 @@
             ## Iterate through each alert and check if it is associated with this policy
             foreach ($alertObj in $alertObjs) {
 
-                if ($policyXML.PolicyContent.Policies.SelectNodes(("//Policy[@name='" + $vropsPolicy.name + "']")).PackageSettings.Alerts.SelectNodes(("//Alert[@id='" + $alertObj.alertId + "']")).enabled) {
+                if ($policyXML.PolicyContent.Policies.SelectNodes(("//Policy[@name=`"" + $vropsPolicy.name + "`"]")).PackageSettings.Alerts.SelectNodes(("//Alert[@id='" + $alertObj.alertId + "']")).enabled) {
 
                     Write-Verbose ($alertObj.alertName + " is associated with policy " + $vropsPolicy.name)
                     $alertObj.alertPolicies += $vropsPolicy.name

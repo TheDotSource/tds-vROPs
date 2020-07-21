@@ -6,11 +6,8 @@
     .DESCRIPTION
         Apply a policy to a custom group.
 
-    .PARAMETER vROPSNode
-        The target vROPs node to perform an import on. Can be pipelined.
-
-    .PARAMETER Credential
-        PowerShell credential object with appropriate permissions for policy import.
+    .PARAMETER vROPSCon
+        A vROPs connection object as created by Connect-vROPs
 
     .PARAMETER policyName
         Name of policy to apply to the custom group.
@@ -19,20 +16,21 @@
         The name of the group to query the policy for.
 
     .INPUTS
-        System.String. vROPs node names can be piped to this function.
+        vropsConnection. A vROPs connection object.
 
     .OUTPUTS
         None.
 
     .EXAMPLE
-        Set-vROPsGroupPolicy -vROPSNode vrops01.lab.local -customGroup CustomGroup -policyName TEST-POLICY -Credential $creds
+        Set-vROPsGroupPolicy -vROPSCon $vRopsCon -customGroup CustomGroup -policyName TEST-POLICY
 
-        Apply policy TEST-POLICY to group CustomGroup on vROPs node vrops01.lab.local
+        Apply policy TEST-POLICY to group CustomGroup using the vRops connection $vRopsCon
 
     .LINK
 
     .NOTES
         01           Alistair McNair          Initial version.
+        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -40,13 +38,11 @@
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [string]$vROPSNode,
+        [vropsConnection]$vROPSCon,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [string]$customGroup,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [string]$policyName,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [System.Management.Automation.PSCredential]$Credential
+        [string]$policyName
     )
 
     begin {
@@ -73,20 +69,21 @@
 
         } # if
 
-        ## Define headers for HTTP requests
-        $headers = @{}
-        $headers.Add("Accept", "application/json")
-        $headers.Add("Content-Type", "application/json")
-
-        ## Add unsupported header as some calls go to internal API
-        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
-
     } # begin
 
     process {
 
+        ## Define headers for HTTP requests
+        $headers = @{}
+        $headers.Add("Accept", "application/json")
+        $headers.Add("Content-Type", "application/json")
+        $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
+
+        ## Add unsupported header as some calls go to internal API
+        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
+
         ## Get policy collection from this node. We need this to lookup IDs later
-        $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies")
 
 
         Write-Verbose ("Fetching policies.")
@@ -94,7 +91,7 @@
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
@@ -115,12 +112,12 @@
 
 
         ## Set url for request
-        $Uri = ("https://" + $vROPSNode + "/suite-api/api/resources/groups?includePolicy=true")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/api/resources/groups?includePolicy=true")
 
 
         ## Get collection of custom groups from API
         try {
-            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got list of custom groups from API.")
         } # try
         catch {
@@ -168,7 +165,7 @@
 
 
         ## PUT this back to the API to update policy GUID
-        $Uri = ("https://" + $vROPSNode + "/suite-api/api/resources/groups")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/api/resources/groups")
 
 
         ## Get collection of custom groups from API
@@ -176,7 +173,7 @@
 
             ## Apply shouldProcess
             if ($PSCmdlet.ShouldProcess($customGroup)) {
-                $customGroups = Invoke-RestMethod -Uri $Uri -Method Put -Headers $headers -Body ($groupObj | ConvertTo-Json -Depth 5) -Credential $Credential -ErrorAction Stop
+                $customGroups = Invoke-RestMethod -Uri $Uri -Method Put -Headers $headers -Body ($groupObj | ConvertTo-Json -Depth 5) -ErrorAction Stop
             } # if
 
             Write-Verbose ("Group was updated with new policy details.")

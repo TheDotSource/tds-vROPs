@@ -8,8 +8,8 @@
         The function will compress the XML in memory and inject it to the HTTP body.
         The function can optionally overwrite any existing policy.
 
-    .PARAMETER vROPSNode
-        The target vROPs node to perform an import on. Can be pipelined.
+    .PARAMETER vROPSCon
+        A vROPs connection object as created by Connect-vROPs
 
     .PARAMETER policyFile
         The XML policy file to import, which was exported from the same or another vROPs node.
@@ -17,11 +17,8 @@
     .PARAMETER forceUpdate
         Optional parameter. Will overwrite an existing policy with the new one.
 
-    .PARAMETER Credential
-        PowerShell credential object with appropriate permissions for policy import.
-
     .INPUTS
-        System.String. vROPs node names can be piped to this function.
+        vropsConnection. A vROPs connection object.
 
     .OUTPUTS
         None.
@@ -45,6 +42,7 @@
 
     .NOTES
         01           Alistair McNair          Initial version.
+        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -52,11 +50,9 @@
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [string]$vROPSNode,
+        [vropsConnection]$vROPSCon,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [String]$policyFile,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [System.Management.Automation.PSCredential]$Credential,
         [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
         [Switch]$forceUpdate
     )
@@ -102,12 +98,6 @@
         ## Create an HTTP boundary, required for multipart uploads
         $httpBoundary = [guid]::NewGuid().ToString()
 
-        ## Define headers
-        $headers = @{}
-        $headers.Add("Content-Type", 'multipart/mixed')
-        $headers.Add("Accept", 'application/json')
-        $headers.Add("X-vRealizeOps-API-use-unsupported", 'true')
-
     } # begin
 
 
@@ -115,6 +105,13 @@
 
 
         Write-Verbose ("Processing vROPS node " + $vROPSNode)
+
+        ## Define headers
+        $headers = @{}
+        $headers.Add("Content-Type", 'multipart/mixed')
+        $headers.Add("Accept", 'application/json')
+        $headers.Add("X-vRealizeOps-API-use-unsupported", 'true')
+        $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
 
 
         ## Read file out to binary
@@ -182,12 +179,12 @@ Content-Type: multipart/form-data
         } # catch
 
         ## Set target URI for this node
-        $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies/import")
+        $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies/import")
 
 
         ## Send request to import
         try {
-            $policyImport = Invoke-RestMethod -Uri $Uri -Method Post -ContentType "multipart/form-data; boundary=$httpBoundary;" -Body $httpBody -Headers $headers -Credential $Credential -ErrorAction Stop
+            $policyImport = Invoke-RestMethod -Uri $Uri -Method Post -ContentType "multipart/form-data; boundary=$httpBoundary;" -Body $httpBody -Headers $headers -ErrorAction Stop
             Write-Verbose ("Policy import was successful")
         } # try
         catch {

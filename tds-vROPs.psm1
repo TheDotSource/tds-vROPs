@@ -14,3 +14,28 @@ forEach ($import in ($public + $private))
 }
 
 Export-ModuleMember -Function $Public.Basename
+
+
+## Define required classes used by this module
+class vropsConnection {
+
+    ## Properties
+    [String]$vROPsNode
+    [String]$userName
+    [String]$authToken
+    [string]$expiresAt
+    [datetime]$creationDate
+
+
+    ## Constructor
+    vropsConnection([string]$vROPsNode, [string]$userName, [string]$authToken, [string]$expiresAt, [datetime]$creationDate) {
+
+        $this.vROPsNode = $vROPsNode
+        $this.userName = $userName
+        $this.authToken = $authToken
+        $this.expiresAt = $expiresAt
+        $this.creationDate = $creationDate
+
+    } # constructor
+
+} # class

@@ -8,30 +8,28 @@
         Lookup policy GUID to get name.
         Return group object with associated policy name and ID.
 
-    .PARAMETER vROPSNode
-        The target vROPs node to perform an import on. Can be pipelined.
-
-    .PARAMETER Credential
-        PowerShell credential object with appropriate permissions for policy import.
+    .PARAMETER vROPSCon
+        A vROPs connection object as created by Connect-vROPs
 
     .PARAMETER customGroup
         The name of the group to query the policy for.
 
     .INPUTS
-        System.String. vROPs node names can be piped to this function.
+        vropsConnection. A vROPs connection object.
 
     .OUTPUTS
         System.Management.Automation.PSCustomObject. Returns a group object with associated policy details.
 
     .EXAMPLE
-        Get-vROPsGroupPolicy -vROPSNode vrops01.lab.local -Credential $creds -customGroup "CustomGroup1"
+        Get-vROPsGroupPolicy -vROPSCon $vRopsCon -customGroup "CustomGroup1"
 
-        Return the policy applied to CustomGroup1 on vROPs node vrops01.lab.local
+        Return the policy applied to CustomGroup1 using the $vRopsCon connection object.
 
     .LINK
 
     .NOTES
         01           Alistair McNair          Initial version.
+        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -39,11 +37,9 @@
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [string]$vROPSNode,
+        [vropsConnection]$vROPSCon,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [string]$customGroup,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [System.Management.Automation.PSCredential]$Credential
+        [string]$customGroup
     )
 
     begin {
@@ -70,23 +66,24 @@
 
         } # if
 
-        ## Define headers for HTTP requests
-        $headers = @{}
-        $headers.Add("Accept", "application/json")
-        $headers.Add("Content-Type", "application/xml;charset=utf-8")
-
-        ## Add unsupported header as some calls go to internal API
-        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
-
     } # begin
 
     process {
 
         Write-Verbose ("Processing vROPS node " + $vROPSNode)
 
+        ## Define headers for HTTP requests
+        $headers = @{}
+        $headers.Add("Accept", "application/json")
+        $headers.Add("Content-Type", "application/xml;charset=utf-8")
+        $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
+
+        ## Add unsupported header as some calls go to internal API
+        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
+
 
         ## Get policy collection from this node. We need this to lookup IDs later
-        $Uri = ("https://" + $vROPSNode + "/suite-api/internal/policies")
+        $Uri = ("https://" + $vRopsCon.vROPSNode + "/suite-api/internal/policies")
 
 
         Write-Verbose ("Fetching policies.")
@@ -94,7 +91,7 @@
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
@@ -104,12 +101,12 @@
 
 
         ## Set url for request
-        $Uri = ("https://" + $vROPSNode + "/suite-api/api/resources/groups?includePolicy=true")
+        $Uri = ("https://" + $vRopsCon.vROPSNode + "/suite-api/api/resources/groups?includePolicy=true")
 
 
         ## Get collection of custom groups from API
         try {
-            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -Credential $Credential -ErrorAction Stop
+            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
             Write-Verbose ("Got list of custom groups from API.")
         } # try
         catch {
@@ -149,7 +146,7 @@
             Write-Verbose ("Group has a policy " + $policyDetails.name + " applied.")
 
             ## Initialise object for this group
-            $groupPolicy = [pscustomobject]@{"vopsNode" = $vROPSNode; "groupName" = $customGroup; "groupId" = $groupObj.id; "policyName" = $policyDetails.name; "policyId" = $policyDetails.id}
+            $groupPolicy = [pscustomobject]@{"vopsNode" = $VropsCon.vROPSNode; "groupName" = $customGroup; "groupId" = $groupObj.id; "policyName" = $policyDetails.name; "policyId" = $policyDetails.id}
 
         } # else
 

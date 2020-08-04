@@ -8,13 +8,15 @@
         Object type requires to be spcified, i.e. host, virtual machine etc.
         Only objects collected by adapter type VMWARE are returned.
 
+        Result page size is 1000, if more than 1000 results are returned, paginated queries will be performed.
+
     .PARAMETER vROPSCon
         A vROPs connection object as created by Connect-vROPs
 
     .PARAMETER ObjectType
         The specified object type to query for.
 
-    .PARAMETER ObjectType
+    .PARAMETER adapterType
         The vrops adapter type to use.
 
     .INPUTS
@@ -41,7 +43,7 @@
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [vropsConnection]$vROpsCon,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [ValidateSet("virtualMachine","hostSystem")]
+        [ValidateSet("VirtualMachine","HostSystem","Datastore")]
         [string]$objectType,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [ValidateSet("VMWARE")]
@@ -68,13 +70,42 @@
         Write-Verbose ("Fetching inventory for object type " + $objectType)
 
         try {
-            $vrObjs = Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=10000") -Headers $headers -ErrorAction Stop
+            $vrObjs = Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000") -Headers $headers -ErrorAction Stop
             Write-Verbose ("Query successful.")
         } # try
         catch {
             Write-Debug ("Connection failed.")
             throw ("Failed to query vROPs node. " + $_.exception.message)
         } # catch
+
+
+        ## Apply pagination if required
+        $resourceList = @()
+
+        ## Add the initial result set so we don't need to query the first page again
+        $resourceList += $vrObjs.resourceList
+
+        ## Figure out how many pages
+        if ($vrObjs.pageInfo.totalCount -gt $vrObjs.pageInfo.pageSize) {
+
+            Write-Verbose ([string]$vrObjs.pageInfo.totalCount + " objects found. Pagination required.")
+
+            ## Figure out how many pages. Round down to nearest whole number as pages start at 0
+            $pageCount = [math]::floor(($vrObjs.pageInfo.totalCount / $vrObjs.pageInfo.pageSize))
+
+            Write-Verbose ([string]$pageCount + " pages required.")
+
+            ## Start from page 1 rather than 0 as we already have the first page
+            for($pageNum=1; $pageNum -le $pageCount; $pageNum++){
+
+                ## Build request string for this page
+                Write-Verbose ("Querying page at https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000&page=" + $pageNum)
+
+                $resourceList += (Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000&page=" + $pageNum) -Headers $headers).resourceList
+
+            } # for
+
+        } # if
 
 
         ## Set process script block. We add source vrops and object type properties to output
@@ -84,7 +115,7 @@
 
 
         ## Sort list for return
-        $sortedObjs = $vrObjs.resourceList.resourceKey | Select-Object Name -Unique | Sort-Object Name | ForEach-Object -Process $feProcess
+        $sortedObjs = $resourceList | Select-Object Identifier, @{label='name'; expression={$_.resourceKey.name}} | ForEach-Object -Process $feProcess
 
         return $sortedObjs
 

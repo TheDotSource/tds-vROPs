@@ -7,11 +7,20 @@
         Create a connection object to a vRealize Operations Manager appliance.
         Acquires a token from the appliance REST API.
 
+        If a flat username is specified, e.g. "testuser", then the authentication source is assumed to be local.
+
+        If a fully qualified username is specified, e.g. "testuser@domain.local", then the authentication source is assumed to be domain.local.
+
+        Either of the above can be overriden by using the optional authSource parameter (see examples).
+
     .PARAMETER vROPSNode
         The target vROPs node to connect to.
 
     .PARAMETER Credential
         The credentials used to connect.
+
+    .PARAMETER authSource
+        Optional. Manually specified authentication source.
 
     .INPUTS
         System.String. Target vRops node.
@@ -23,6 +32,11 @@
         $token = Connect-vROPs -vROPSNode vrops01.lab.local -Credential $creds
 
         Return a connection token from vrops01 using $creds
+
+    .EXAMPLE
+        $token = Connect-vROPs -vROPSNode vrops01.lab.local -Credential $creds -authSource lab.local
+
+        Return a connection token from vrops01 using $creds, authenticate using lab.local as the authentication source.
 
     .LINK
 
@@ -37,7 +51,9 @@
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [string]$vROPSNode,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [System.Management.Automation.PSCredential]$Credential
+        [System.Management.Automation.PSCredential]$Credential,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$true)]
+        [string]$authSource
     )
 
     begin {
@@ -69,20 +85,32 @@
         $headers.Add("Accept", "application/json")
         $headers.Add("Content-Type", "application/json")
 
-        ## Capture account details. If @ is specified, split this and use as authSource
-        $authSource = $Credential.UserName.Split("@")[1]
-        $userName = $Credential.UserName.Split("@")[0]
 
+        ## Check if authSource is specified
+        if ($authSource) {
 
-        ## If not, we assume local account
-        if (!$authSource) {
-            $authSource = "LOCAL"
+            Write-Verbose ($authSource + " has been specified as the authentication source.")
+
         } # if
+        else {
 
+            Write-Verbose ("Authentication source was not specified, it will be derived.")
+
+            ## Capture account details. If @ is specified, split this and use as authSource
+            $authSource = $Credential.UserName.Split("@")[1]
+
+            ## If not, we assume local account
+            if (!$authSource) {
+                $authSource = "LOCAL"
+            } # if
+
+        } # else
+
+        Write-Verbose ("Authentication source is " + $authSource)
 
         ## Set body content
         $bodyObj = [pscustomobject]@{
-            "username" = $userName;
+            "username" =   $Credential.UserName.Split("@")[0];
             "authSource" = $authSource;
             "password" = $Credential.GetNetworkCredential().Password;
             "others" = "[]";
@@ -111,8 +139,26 @@
         } # catch
 
 
+        ## Set headers for API request for version data
+        $headers.Add("Authorization", ("vRealizeOpsToken " + $authToken.'auth-token'.token))
+
+        Write-Verbose ("Fetching node version data.")
+
+
+        ## Fetch version data. This would normally be done via /suite-api/api/versions/current. However in 7.5 this request hangs.
+        ## We determine the version by querying /versions and taking the latest
+        try {
+            $versionData = (Invoke-RestMethod -Method Get -Uri ("https://" + $vROPSNode + "/suite-api/api/versions") -Headers $headers -ErrorAction Stop).values | Sort-Object -Property releaseName -Descending | Select-Object releaseName -First 1
+            Write-Verbose ("Got version data.")
+        } # try
+        catch {
+            Write-Debug ("Failed to get version data.")
+            throw ("Failed to get version data. " + $_.exception.message)
+        } # catch
+
+
         ## Return completed object using vropsConnection class
-        return [vropsConnection]::new($vROPsNode, $Credential.UserName, $authToken.token, $authToken.expiresat, (Get-Date))
+        return [vropsConnection]::new($vROPsNode, $Credential.UserName, $authToken.token, $authToken.expiresat, $versionData.releaseName, (Get-Date))
 
 
     } # process

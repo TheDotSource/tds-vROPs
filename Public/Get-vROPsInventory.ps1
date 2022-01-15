@@ -33,7 +33,6 @@
     .LINK
 
     .NOTES
-        01           Alistair McNair          Initial version.
 
     #>
 
@@ -70,11 +69,10 @@
         Write-Verbose ("Fetching inventory for object type " + $objectType)
 
         try {
-            $vrObjs = Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000") -Headers $headers -ErrorAction Stop
+            $vrObjs = Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000") -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Query successful.")
         } # try
         catch {
-            Write-Debug ("Connection failed.")
             throw ("Failed to query vROPs node. " + $_.exception.message)
         } # catch
 
@@ -101,7 +99,7 @@
                 ## Build request string for this page
                 Write-Verbose ("Querying page at https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000&page=" + $pageNum)
 
-                $resourceList += (Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000&page=" + $pageNum) -Headers $headers).resourceList
+                $resourceList += (Invoke-RestMethod -Method Get -Uri ("https://" + $vROpsCon.vropsnode + "/suite-api/api/resources?adapterKind=" + $adapterType + "&resourceKind=" + $objectType + "&pageSize=1000&page=" + $pageNum) -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates).resourceList
 
             } # for
 

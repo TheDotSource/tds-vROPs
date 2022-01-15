@@ -32,8 +32,6 @@
     .LINK
 
     .NOTES
-        01           Alistair McNair          Initial version.
-        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -52,38 +50,17 @@
 
         Write-Verbose ("Starting function.")
 
-        ## Ignore invalid certificates
-        if (!([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
-            Add-Type @"
-            using System.Net;
-            using System.Security.Cryptography.X509Certificates;
-            public class TrustAllCertsPolicy : ICertificatePolicy {
-                public bool CheckValidationResult(
-                    ServicePoint srvPoint, X509Certificate certificate,
-                    WebRequest request, int certificateProblem) {
-                    return true;
-                }
-            }
-"@
-
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
-
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        } # if
 
         ## Load the required assemblies for handling zip files
         Write-Verbose ("Loading assemblies.")
 
         try {
             Add-Type -Assembly System.IO.Compression -ErrorAction Stop | Out-Null
+            Write-Verbose ("Assemblies loaded.")
         } # try
         catch {
-            Write-Debug ("Failed to load assemblies.")
             throw ("Failed to load assemblies, the CMDlet returned " + $_.exception.message)
         } # catch
-
-        Write-Verbose ("Assemblies were loaded.")
 
 
         ## Test desintation directory
@@ -94,7 +71,7 @@
         ## Trim any trailing \ from path
         $destinationDir = $destinationDir.trim("\")
 
-        Write-Verbose ("Output directory will be " + $destinationDir)
+        Write-Verbose ("Output directory is " + $destinationDir)
 
 
     } # begin
@@ -105,8 +82,8 @@
 
         ## Define headers for HTTP requests
         $headers = @{}
-        $headers.Add("Accept", "application/json")
-        $headers.Add("Content-Type", "application/xml;charset=utf-8")
+        $headers.Add("Accept", "application/zip, application/json")
+        $headers.Add("Content-Type", "application/json")
         $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
 
         ## Add unsupported header as some calls go to internal API
@@ -120,11 +97,10 @@
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get policies.")
             throw ("Failed to get policies, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -139,8 +115,7 @@
         } # if
 
 
-        Write-Verbose ("Found GUID for policy  " + $policyName)
-
+        Write-Verbose ("Found GUID for policy " + $policyName + " (" + $policyGUID.id + ")")
 
         ## Fetch this policy from API, API returns in zip format
         $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies/export?id=" + $policyGUID.id)
@@ -148,11 +123,10 @@
         Write-Verbose ("Fetching policy zip")
 
         try {
-            $policyZip = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $policyZip = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Fetched policy zip from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get policy zip.")
             throw ("Failed to get policy zip, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -160,7 +134,7 @@
         Write-Verbose ("Decompressing zip and reading policy XML.")
 
 
-        ## We need to open this zip and extract the resulting XML so we can parse it later
+        ## We need to open this zip and extract the resulting XML
         try {
             $apiZip = New-Object System.IO.Memorystream -ErrorAction Stop
             $apiZip.Write($policyZip.Content,0,$policyZip.Content.Length)
@@ -170,7 +144,6 @@
             $policyXML = $EntryReader.ReadToEnd()
         } # try
         catch {
-            Write-Debug ("Failed to open policy zip file.")
             throw ("Failed to open policy zip file. Verify that the account used is a member of the vRops system administrators, otherwise policy export is not possible. The CMDlet returned " + $_.exception.message)
         } # catch
 

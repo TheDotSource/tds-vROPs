@@ -27,10 +27,6 @@
 
     .LINK
 
-    .NOTES
-        01           Alistair McNair          Initial version.
-        02           Alistair McNair          Replaced Basic Auth with token based authentication.
-
     #>
 
     [CmdletBinding()]
@@ -45,26 +41,6 @@
     begin {
 
         Write-Verbose ("Starting function.")
-
-        ## Ignore invalid certificates
-        if (!([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
-            Add-Type @"
-            using System.Net;
-            using System.Security.Cryptography.X509Certificates;
-            public class TrustAllCertsPolicy : ICertificatePolicy {
-                public bool CheckValidationResult(
-                    ServicePoint srvPoint, X509Certificate certificate,
-                    WebRequest request, int certificateProblem) {
-                    return true;
-                }
-            }
-"@
-
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
-
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        } # if
 
     } # begin
 
@@ -91,11 +67,10 @@
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get policies.")
             throw ("Failed to get policies, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -106,11 +81,10 @@
 
         ## Get collection of custom groups from API
         try {
-            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got list of custom groups from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get list of custom groups.")
             throw ("Failed to get list of custom groups, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -157,7 +131,6 @@
 
 
     end {
-
         Write-Verbose ("Function complete.")
     } # end
 

@@ -25,16 +25,19 @@ class vropsConnection {
     [String]$authToken
     [string]$expiresAt
     [datetime]$creationDate
+    [bool]$skipCertificates
 
 
     ## Constructor
-    vropsConnection([string]$vROPsNode, [string]$userName, [string]$authToken, [string]$expiresAt, [datetime]$creationDate) {
+    vropsConnection([string]$vROPsNode, [string]$userName, [string]$authToken, [string]$expiresAt, [datetime]$creationDate, [bool]$skipCertificates) {
 
         $this.vROPsNode = $vROPsNode
         $this.userName = $userName
         $this.authToken = $authToken
         $this.expiresAt = $expiresAt
         $this.creationDate = $creationDate
+        $this.skipCertificates = $skipCertificates
+
 
     } # constructor
 

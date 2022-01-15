@@ -29,8 +29,6 @@
     .LINK
 
     .NOTES
-        01           Alistair McNair          Initial version.
-        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -48,26 +46,6 @@
     begin {
 
         Write-Verbose ("Starting function.")
-
-        ## Ignore invalid certificates
-        if (!([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
-            Add-Type @"
-            using System.Net;
-            using System.Security.Cryptography.X509Certificates;
-            public class TrustAllCertsPolicy : ICertificatePolicy {
-                public bool CheckValidationResult(
-                    ServicePoint srvPoint, X509Certificate certificate,
-                    WebRequest request, int certificateProblem) {
-                    return true;
-                }
-            }
-"@
-
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
-
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        } # if
 
     } # begin
 
@@ -91,11 +69,10 @@
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get policies.")
             throw ("Failed to get policies, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -106,7 +83,6 @@
 
         ## Check we have 1 matching policy
         if (($policyDetails | Measure-Object).count -ne 1) {
-            Write-Debug ("Policy not found.")
             throw ("The specfied policy " + $policyName + " was not found on this vROPs node.")
         } # if
 
@@ -117,11 +93,10 @@
 
         ## Get collection of custom groups from API
         try {
-            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $customGroups = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got list of custom groups from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get list of custom groups.")
             throw ("Failed to get list of custom groups, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -132,7 +107,6 @@
 
         ## Check there is 1 group matching this name
         if (($groupObj | Measure-Object).count -ne 1) {
-            Write-Debug ("Custom group not found.")
             throw ("The specfied custom group " + $customGroup + " was not found on this vROPs node.")
         } # if
 
@@ -173,13 +147,12 @@
 
             ## Apply shouldProcess
             if ($PSCmdlet.ShouldProcess($customGroup)) {
-                $customGroups = Invoke-RestMethod -Uri $Uri -Method Put -Headers $headers -Body ($groupObj | ConvertTo-Json -Depth 5) -ErrorAction Stop
+                $customGroups = Invoke-RestMethod -Uri $Uri -Method Put -Headers $headers -Body ($groupObj | ConvertTo-Json -Depth 5) -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             } # if
 
             Write-Verbose ("Group was updated with new policy details.")
         } # try
         catch {
-            Write-Debug ("Failed to update group.")
             throw ("Failed to update group with new policy, the CMDlet returned " + $_.exception.message)
         } # catch
 

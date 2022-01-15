@@ -24,25 +24,23 @@
         None.
 
     .EXAMPLE
-        Import-VROPsPolicy -vROPSNode vrops01.lab.local -policyFile c:\policies\sample.xml -forceUpdate -Credential $creds -Verbose
+        Import-VROPsPolicy -vROPSNode vrops01.lab.local -policyFile c:\policies\sample.xml -forceUpdate
 
-        Import the policy file sample.xml to the vROPs node vrops.lab.local and force overwrite. Uses credential object $creds and specifies verbose output
-
-    .EXAMPLE
-        $vROPSNodes | Import-VROPsPolicy -policyFile c:\policies\sample.xml -forceUpdate -Credential $creds
-
-        Import the policy file sample.xml to all vROPs nodes within the $vROPSNodes array and force overwrite. Uses credential object $creds.
+        Import the policy file sample.xml to the vROPs node vrops.lab.local and force overwrite.
 
     .EXAMPLE
-        $vROPSNodes | Import-VROPsPolicy -policyFile c:\policies\sample.xml -Credential $creds
+        $vROPSNodes | Import-VROPsPolicy -policyFile c:\policies\sample.xml -forceUpdate
 
-        Import the policy file sample.xml to all vROPs nodes within the $vROPSNodes array (will not overwrite). Uses credential object $creds.
+        Import the policy file sample.xml to all vROPs nodes within the $vROPSNodes array and force overwrite.
+
+    .EXAMPLE
+        $vROPSNodes | Import-VROPsPolicy -policyFile c:\policies\sample.xml
+
+        Import the policy file sample.xml to all vROPs nodes within the $vROPSNodes array (will not overwrite).
 
     .LINK
 
     .NOTES
-        01           Alistair McNair          Initial version.
-        02           Alistair McNair          Replaced Basic Auth with token based authentication.
 
     #>
 
@@ -61,25 +59,6 @@
 
         Write-Verbose ("Starting function.")
 
-        ## Ignore invalid certificates
-        if (!([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
-            Add-Type @"
-            using System.Net;
-            using System.Security.Cryptography.X509Certificates;
-            public class TrustAllCertsPolicy : ICertificatePolicy {
-                public bool CheckValidationResult(
-                    ServicePoint srvPoint, X509Certificate certificate,
-                    WebRequest request, int certificateProblem) {
-                    return true;
-                }
-            }
-"@
-
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
-
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        } # if
 
         ## Validate specified policy file
         if (!(Test-Path $policyFile)) {
@@ -108,9 +87,9 @@
 
         ## Define headers
         $headers = @{}
-        $headers.Add("Content-Type", 'multipart/mixed')
-        $headers.Add("Accept", 'application/json')
-        $headers.Add("X-vRealizeOps-API-use-unsupported", 'true')
+        $headers.Add("Content-Type", "multipart/form-data; boundary=$httpBoundary")
+        $headers.Add("Accept", "application/json")
+        $headers.Add("X-vRealizeOps-API-use-unsupported", "true")
         $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
 
 
@@ -174,21 +153,18 @@ Content-Type: multipart/form-data
             Write-Verbose ("HTTP request template configured.")
         } # try
         catch {
-            Write-Debug ("Failed to set HTTP request.")
             throw ("Failed to configure HTTP request, the CMDlet returned " + $_.exception.message)
         } # catch
 
         ## Set target URI for this node
         $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies/import")
 
-
         ## Send request to import
         try {
-            $policyImport = Invoke-RestMethod -Uri $Uri -Method Post -ContentType "multipart/form-data; boundary=$httpBoundary;" -Body $httpBody -Headers $headers -ErrorAction Stop
+            $policyImport = Invoke-RestMethod -Uri $Uri -Method Post -Body $httpBody -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Policy import was successful")
         } # try
         catch {
-            Write-Debug ("Failed to import policy file.")
             throw ("Failed to import policy file, the CMDlet returned " + $_.exception.message)
         } # catch
 

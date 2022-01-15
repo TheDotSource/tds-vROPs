@@ -18,11 +18,6 @@
         System.Management.Automation.PSCustomObject. A collection of custom objects representing alerts and their associated policies.
 
     .EXAMPLE
-        $results = Report-vROPsPolicy -vROPSNode testvro.lab.local -Credential $creds -Verbose
-
-        Query testvro.lab.local and save results to $results. Use credential object in $creds. Use verbose output.
-
-    .EXAMPLE
         $results = Get-vROPsPolicyReport -vROPSCon $vRopsCon
 
         Query on $vRopsCon and save results to $results.
@@ -30,9 +25,6 @@
     .LINK
 
     .NOTES
-        01           Alistair McNair          Initial version.
-        02           Alistair McNair          Replaced Basic Auth with token based authentication.
-                                              Resolved issue with apostrophe in policy name
 
     #>
 
@@ -47,27 +39,6 @@
     begin {
 
         Write-Verbose ("Starting function.")
-
-        ## Ignore invalid certificates
-        if (!([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
-            Add-Type @"
-            using System.Net;
-            using System.Security.Cryptography.X509Certificates;
-            public class TrustAllCertsPolicy : ICertificatePolicy {
-                public bool CheckValidationResult(
-                    ServicePoint srvPoint, X509Certificate certificate,
-                    WebRequest request, int certificateProblem) {
-                    return true;
-                }
-            }
-"@
-
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
-
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        } # if
-
 
         ## Load the required assemblies for handling zip files
         Write-Verbose ("Loading assemblies.")
@@ -92,7 +63,7 @@
 
         ## Define headers for HTTP requests
         $headers = @{}
-        $headers.Add("Accept", "application/json")
+        $headers.Add("Accept", "application/zip, application/json")
         $headers.Add("Content-Type", "application/xml;charset=utf-8")
         $headers.Add("Authorization", ("vRealizeOpsToken " + $vROpsCon.authToken))
 
@@ -109,11 +80,10 @@
 
         ## Get all alert content
         try {
-            $vropsAlerts = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $vropsAlerts = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got alerts from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get alerts.")
             throw ("Failed to get alerts, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -135,11 +105,10 @@
 
         ## Get policies from this vROPs node
         try {
-            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+            $vropsPolicies = Invoke-RestMethod -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
             Write-Verbose ("Got list of policies and GUIDs from API.")
         } # try
         catch {
-            Write-Debug ("Failed to get policies.")
             throw ("Failed to get policies, the CMDlet returned " + $_.exception.message)
         } # catch
 
@@ -154,11 +123,10 @@
             $Uri = ("https://" + $vROPSCon.vROPSNode + "/suite-api/internal/policies/export?id=" + $vropsPolicy.id)
 
             try {
-                $vropsPolicies = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -ErrorAction Stop
+                $vropsPolicies = Invoke-WebRequest -Uri $Uri -Method Get -Headers $headers -SkipCertificateCheck:$vROPSCon.skipCertificates -ErrorAction Stop
                 Write-Verbose ("Fetched policy zip from API.")
             } # try
             catch {
-                Write-Debug ("Failed to get policy zip.")
                 throw ("Failed to get policy zip, the CMDlet returned " + $_.exception.message)
             } # catch
 
@@ -178,7 +146,6 @@
                 [xml]$policyXML = $EntryReader.ReadToEnd()
             } # try
             catch {
-                Write-Debug ("Failed to open policy zip file.")
                 throw ("Failed to open policy zip file, the CMDlet returned " + $_.exception.message)
             } # catch
 

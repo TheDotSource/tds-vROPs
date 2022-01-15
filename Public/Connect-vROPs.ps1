@@ -22,16 +22,24 @@
     .PARAMETER authSource
         Optional. Manually specified authentication source.
 
+    .PARAMETER skipCertificates
+        Ignore invalid or self signed certificates.
+
     .INPUTS
         System.String. Target vRops node.
 
     .OUTPUTS
-        None.
+        vropsConnection. vRops connection object.
 
     .EXAMPLE
         $token = Connect-vROPs -vROPSNode vrops01.lab.local -Credential $creds
 
         Return a connection token from vrops01 using $creds
+
+    .EXAMPLE
+        $token = Connect-vROPs -vROPSNode vrops01.lab.local -Credential $creds -skipCertificates
+
+        Return a connection token from vrops01 using $creds, ignore self signed certificates.
 
     .EXAMPLE
         $token = Connect-vROPs -vROPSNode vrops01.lab.local -Credential $creds -authSource lab.local
@@ -53,32 +61,14 @@
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [System.Management.Automation.PSCredential]$Credential,
         [Parameter(Mandatory=$false,ValueFromPipeline=$true)]
-        [string]$authSource
+        [string]$authSource,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [switch]$skipCertificates = $false
     )
 
     begin {
 
         Write-Verbose ("Starting function.")
-
-        ## Ignore invalid certificates
-        if (!([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
-            Add-Type @"
-            using System.Net;
-            using System.Security.Cryptography.X509Certificates;
-            public class TrustAllCertsPolicy : ICertificatePolicy {
-                public bool CheckValidationResult(
-                    ServicePoint srvPoint, X509Certificate certificate,
-                    WebRequest request, int certificateProblem) {
-                    return true;
-                }
-            }
-"@
-
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy -ErrorAction SilentlyContinue
-
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        } # if
 
         ## Define headers for HTTP requests
         $headers = @{}
@@ -130,7 +120,7 @@
         Write-Verbose ("Attempting connection.")
 
         try {
-            $authToken = Invoke-RestMethod -Method Post -Uri ("https://" + $vROPSNode + "/suite-api/api/auth/token/acquire") -Body ($bodyObj | ConvertTo-Json) -Headers $headers -ErrorAction Stop
+            $authToken = Invoke-RestMethod -Method Post -Uri ("https://" + $vROPSNode + "/suite-api/api/auth/token/acquire") -Body ($bodyObj | ConvertTo-Json) -Headers $headers -SkipCertificateCheck:$skipCertificates -ErrorAction Stop
             Write-Verbose ("Connection successful.")
         } # try
         catch {
@@ -139,26 +129,8 @@
         } # catch
 
 
-        ## Set headers for API request for version data
-        $headers.Add("Authorization", ("vRealizeOpsToken " + $authToken.'auth-token'.token))
-
-        Write-Verbose ("Fetching node version data.")
-
-
-        ## Fetch version data. This would normally be done via /suite-api/api/versions/current. However in 7.5 this request hangs.
-        ## We determine the version by querying /versions and taking the latest
-        try {
-            $versionData = (Invoke-RestMethod -Method Get -Uri ("https://" + $vROPSNode + "/suite-api/api/versions") -Headers $headers -ErrorAction Stop).values | Sort-Object -Property releaseName -Descending | Select-Object releaseName -First 1
-            Write-Verbose ("Got version data.")
-        } # try
-        catch {
-            Write-Debug ("Failed to get version data.")
-            throw ("Failed to get version data. " + $_.exception.message)
-        } # catch
-
-
         ## Return completed object using vropsConnection class
-        return [vropsConnection]::new($vROPsNode, $Credential.UserName, $authToken.token, $authToken.expiresat, $versionData.releaseName, (Get-Date))
+        return [vropsConnection]::new($vROPsNode, $Credential.UserName, $authToken.token, $authToken.expiresat, (Get-Date), $skipCertificates)
 
 
     } # process
